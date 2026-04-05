@@ -70,6 +70,7 @@ class OrderProxyService(
                 put("clientOrderId", request.newClientOrderId)
             }
             put("marketType", "SPOT")
+            put("isMarketMaker", true)
         }
 
         val response = httpClient.post("$orderbookBaseUrl/trade/orders") {
