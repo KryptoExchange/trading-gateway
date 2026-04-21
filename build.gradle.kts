@@ -18,7 +18,7 @@ repositories {
     maven("https://jitpack.io")
 }
 
-val kryptoCommonsVersion = "1.1.29"
+val kryptoCommonsVersion = "1.1.34"
 
 dependencies {
     // Ktor Server

@@ -24,8 +24,15 @@ fun Route.marketDataRoutes() {
 
     // GET /api/v1/exchangeInfo
     get("/exchangeInfo") {
-        val info = exchangeInfoService.getExchangeInfo()
-        call.respond(info)
+        try {
+            val info = exchangeInfoService.getExchangeInfo()
+            call.respond(info)
+        } catch (e: IllegalStateException) {
+            call.respond(
+                HttpStatusCode.ServiceUnavailable,
+                mapOf("code" to -1003, "msg" to (e.message ?: "Service unavailable"))
+            )
+        }
     }
 
     // GET /api/v1/depth?symbol=BTCUSDT&limit=20

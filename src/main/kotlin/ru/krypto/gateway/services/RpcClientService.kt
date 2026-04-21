@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory
 import ru.krypto.common.interfaces.ApiKeyRpcService
 import ru.krypto.common.interfaces.OrderbookRpc
 import ru.krypto.common.interfaces.TradingPairRpcService
+import ru.krypto.common.model.OrderbookSnapshotResponse
 import ru.krypto.common.model.TradingPairDictionary
 import ru.krypto.common.model.ValidateApiKeyRequest
 import ru.krypto.common.model.ValidateApiKeyResponse
@@ -190,6 +191,23 @@ class RpcClientService(private val appConfig: AppConfig) {
                 tradingPairServiceRef.set(createTradingPairService())
                 orderbookRpcRef.set(createOrderbookRpc())
                 orderbookRpcRef.get().cancelAllByTradingPair(tradingPair)
+            } else {
+                throw e
+            }
+        }
+    }
+
+    suspend fun getOrderbookSnapshot(symbol: String, depth: Int): OrderbookSnapshotResponse {
+        return try {
+            orderbookRpcRef.get().getOrderbookSnapshot(symbol, depth)
+        } catch (e: Exception) {
+            if (shouldReconnect(e)) {
+                logger.warn("Orderbook RPC getOrderbookSnapshot failed, reconnecting: {}", e.message)
+                resetClient()
+                apiKeyServiceRef.set(createApiKeyService())
+                tradingPairServiceRef.set(createTradingPairService())
+                orderbookRpcRef.set(createOrderbookRpc())
+                orderbookRpcRef.get().getOrderbookSnapshot(symbol, depth)
             } else {
                 throw e
             }

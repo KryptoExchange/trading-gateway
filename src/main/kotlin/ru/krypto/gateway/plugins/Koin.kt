@@ -69,7 +69,7 @@ fun redisModule(appConfig: AppConfig) = module {
 
 fun serviceModule() = module {
     single { WebSocketHubService() }
-    single { OrderBookCacheService(get()) }
+    single { OrderBookCacheService(get(), get()) }
     single { TradeCacheService(get()) }
     single { TickerCacheService(get()) }
     single { ExchangeInfoService(get(), get()) }

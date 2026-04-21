@@ -1,6 +1,9 @@
 package ru.krypto.gateway.services
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import ru.krypto.common.model.OrderbookSnapshotResponse
 import ru.krypto.gateway.kafka.MarketDataMessage
 import ru.krypto.gateway.model.DepthResponse
 import ru.krypto.gateway.model.DepthUpdateEvent
@@ -16,10 +19,14 @@ data class OrderBookSnapshot(
 )
 
 class OrderBookCacheService(
-    private val webSocketHub: WebSocketHubService
+    private val webSocketHub: WebSocketHubService,
+    private val rpcClientService: RpcClientService
 ) {
     private val logger = LoggerFactory.getLogger(OrderBookCacheService::class.java)
     private val cache = ConcurrentHashMap<String, OrderBookSnapshot>()
+    private val rpcFallbackLocks = ConcurrentHashMap<String, Mutex>()
+    private val rpcFallbackCooldownMs = 1_000L
+    private val lastRpcFallbackAt = ConcurrentHashMap<String, Long>()
 
     fun update(data: MarketDataMessage) {
         val pair = data.tradingPair
@@ -55,8 +62,18 @@ class OrderBookCacheService(
         }
     }
 
-    fun getDepth(symbol: String, limit: Int): DepthResponse? {
-        val snapshot = cache[symbol.uppercase()] ?: return null
+    suspend fun getDepth(symbol: String, limit: Int): DepthResponse? {
+        val normalized = symbol.uppercase()
+        val cached = cache[normalized]
+        if (cached != null) {
+            return toDepthResponse(cached, limit)
+        }
+
+        val fallback = fillFromRpc(normalized, limit) ?: return null
+        return toDepthResponse(fallback, limit)
+    }
+
+    private fun toDepthResponse(snapshot: OrderBookSnapshot, limit: Int): DepthResponse {
         return DepthResponse(
             lastUpdateId = snapshot.referenceSeq,
             bids = snapshot.bids.take(limit).map { (price, volume) ->
@@ -66,6 +83,60 @@ class OrderBookCacheService(
                 listOf(PrecisionService.longToDecimalString(price), PrecisionService.longToDecimalString(volume))
             }
         )
+    }
+
+    private suspend fun fillFromRpc(symbol: String, limit: Int): OrderBookSnapshot? {
+        val now = System.currentTimeMillis()
+        val lastAttempt = lastRpcFallbackAt[symbol] ?: 0L
+        if (now - lastAttempt < rpcFallbackCooldownMs) {
+            return cache[symbol]
+        }
+
+        val mutex = rpcFallbackLocks.computeIfAbsent(symbol) { Mutex() }
+        return mutex.withLock {
+            cache[symbol]?.let { return@withLock it }
+            val recent = lastRpcFallbackAt[symbol] ?: 0L
+            if (System.currentTimeMillis() - recent < rpcFallbackCooldownMs) {
+                return@withLock cache[symbol]
+            }
+
+            try {
+                logger.info("Cache miss for {}, fetching snapshot via RPC (depth={})", symbol, limit)
+                val rpcSnapshot = rpcClientService.getOrderbookSnapshot(symbol, limit)
+                val snapshot = rpcSnapshotToCache(symbol, rpcSnapshot)
+                cache[symbol] = snapshot
+                lastRpcFallbackAt[symbol] = System.currentTimeMillis()
+                snapshot
+            } catch (e: Exception) {
+                logger.warn("RPC fallback for {} failed: {}", symbol, e.message)
+                lastRpcFallbackAt[symbol] = System.currentTimeMillis()
+                null
+            }
+        }
+    }
+
+    private fun rpcSnapshotToCache(symbol: String, snapshot: OrderbookSnapshotResponse): OrderBookSnapshot {
+        val bids = snapshot.bids.mapNotNull { pq -> toLongPair(pq) }
+        val asks = snapshot.asks.mapNotNull { pq -> toLongPair(pq) }
+        return OrderBookSnapshot(
+            tradingPair = symbol,
+            bids = bids,
+            asks = asks,
+            referenceSeq = 0L,
+            timestamp = snapshot.timestamp
+        )
+    }
+
+    private fun toLongPair(pq: List<String>): Pair<Long, Long>? {
+        if (pq.size < 2) return null
+        return try {
+            val price = PrecisionService.decimalStringToLong(pq[0])
+            val volume = PrecisionService.decimalStringToLong(pq[1])
+            if (price <= 0 || volume <= 0) null else price to volume
+        } catch (e: Exception) {
+            logger.warn("Failed to parse snapshot level {}: {}", pq, e.message)
+            null
+        }
     }
 
     fun getBestBidPrice(symbol: String): Long? {

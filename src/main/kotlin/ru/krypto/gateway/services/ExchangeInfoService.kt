@@ -8,6 +8,8 @@ import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import ru.krypto.gateway.config.AppConfig
 import ru.krypto.gateway.model.ExchangeInfoResponse
@@ -29,6 +31,7 @@ class ExchangeInfoService(
     @Volatile
     private var cacheTimestamp: Long = 0
     private val cacheTtlMs = 5 * 60 * 1000L // 5 minutes
+    private val rpcTimeoutMs = 5_000L
 
     // Precision map: symbol -> (priceDecimals, volumeDecimals)
     val precisionMap = ConcurrentHashMap<String, Pair<Int, Int>>()
@@ -40,11 +43,30 @@ class ExchangeInfoService(
             return cached
         }
 
-        return fetchAndCache()
+        return try {
+            fetchAndCache()
+        } catch (e: TimeoutCancellationException) {
+            val fallback = cachedInfo
+            if (fallback != null) {
+                logger.warn("exchangeInfo RPC timed out ({}ms), serving stale cache", rpcTimeoutMs)
+                fallback
+            } else {
+                logger.error("exchangeInfo RPC timed out and no cache available: {}", e.message)
+                throw IllegalStateException("Orderbook-service unavailable: exchangeInfo RPC timed out", e)
+            }
+        } catch (e: Exception) {
+            val fallback = cachedInfo
+            if (fallback != null) {
+                logger.warn("exchangeInfo RPC failed ({}), serving stale cache", e.message)
+                fallback
+            } else {
+                throw e
+            }
+        }
     }
 
     private suspend fun fetchAndCache(): ExchangeInfoResponse {
-        val tradingPairs = rpcClientService.getTradingPairs()
+        val tradingPairs = withTimeout(rpcTimeoutMs) { rpcClientService.getTradingPairs() }
 
         val symbols = tradingPairs.mapNotNull { pair ->
             try {
