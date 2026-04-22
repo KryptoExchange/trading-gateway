@@ -118,7 +118,7 @@ fun Route.tradingRoutes() {
             }
         }
 
-        // GET /api/v1/myTrades?symbol=BTCUSDT&limit=50
+        // GET /api/v1/myTrades?symbol=BTCUSDT&limit=50&orderId=<id>
         get("/myTrades") {
             if (!requireApiKeyPermission("READ")) return@get
 
@@ -134,8 +134,9 @@ fun Route.tradingRoutes() {
                 return@get
             }
             val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 50
+            val orderId = call.request.queryParameters["orderId"]?.takeIf { it.isNotBlank() }
 
-            val trades = tradeCacheService.getMyTrades(userId, symbol, limit.coerceIn(1, 1000))
+            val trades = tradeCacheService.getMyTrades(userId, symbol, limit.coerceIn(1, 1000), orderId)
             call.respond(trades)
         }
 

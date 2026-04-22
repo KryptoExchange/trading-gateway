@@ -126,22 +126,26 @@ class TradeCacheService(
         }
     }
 
-    fun getMyTrades(userId: UUID, symbol: String, limit: Int): List<MyTradeResponse> {
+    fun getMyTrades(userId: UUID, symbol: String, limit: Int, orderId: String? = null): List<MyTradeResponse> {
         val key = "$userId:${symbol.uppercase()}"
         val trades = userTrades[key] ?: return emptyList()
-        return trades.take(limit).map { trade ->
-            MyTradeResponse(
-                id = trade.tradeId,
-                orderId = trade.orderId,
-                symbol = trade.tradingPair,
-                price = PrecisionService.longToDecimalString(trade.price.toLongOrNull() ?: 0),
-                qty = PrecisionService.longToDecimalString(trade.quantity.toLongOrNull() ?: 0),
-                commission = trade.fee,
-                commissionAsset = trade.feeAsset,
-                time = trade.timestamp,
-                isMaker = trade.isMaker,
-                isBuyer = trade.isBuyer
-            )
-        }
+        return trades.asSequence()
+            .filter { orderId == null || it.orderId == orderId }
+            .take(limit)
+            .map { trade ->
+                MyTradeResponse(
+                    id = trade.tradeId,
+                    orderId = trade.orderId,
+                    symbol = trade.tradingPair,
+                    price = PrecisionService.longToDecimalString(trade.price.toLongOrNull() ?: 0),
+                    qty = PrecisionService.longToDecimalString(trade.quantity.toLongOrNull() ?: 0),
+                    commission = trade.fee,
+                    commissionAsset = trade.feeAsset,
+                    time = trade.timestamp,
+                    isMaker = trade.isMaker,
+                    isBuyer = trade.isBuyer
+                )
+            }
+            .toList()
     }
 }
