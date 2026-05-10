@@ -29,6 +29,10 @@ object PrecisionService {
         return BigDecimal(value).multiply(DIVISOR).toLong()
     }
 
+    fun rawFixedPointStringToLong(value: String): Long {
+        return BigDecimal(value).toBigIntegerExact().longValueExact()
+    }
+
     fun decimalStringToBigInteger(value: String): BigInteger {
         return BigDecimal(value).multiply(DIVISOR).toBigInteger()
     }

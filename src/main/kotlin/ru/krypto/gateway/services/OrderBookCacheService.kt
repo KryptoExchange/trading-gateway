@@ -116,8 +116,8 @@ class OrderBookCacheService(
     }
 
     private fun rpcSnapshotToCache(symbol: String, snapshot: OrderbookSnapshotResponse): OrderBookSnapshot {
-        val bids = snapshot.bids.mapNotNull { pq -> toLongPair(pq) }
-        val asks = snapshot.asks.mapNotNull { pq -> toLongPair(pq) }
+        val bids = snapshot.bids.mapNotNull { pq -> toRawLongPair(pq) }
+        val asks = snapshot.asks.mapNotNull { pq -> toRawLongPair(pq) }
         return OrderBookSnapshot(
             tradingPair = symbol,
             bids = bids,
@@ -127,15 +127,11 @@ class OrderBookCacheService(
         )
     }
 
-    private fun toLongPair(pq: List<String>): Pair<Long, Long>? {
-        if (pq.size < 2) return null
-        return try {
-            val price = PrecisionService.decimalStringToLong(pq[0])
-            val volume = PrecisionService.decimalStringToLong(pq[1])
-            if (price <= 0 || volume <= 0) null else price to volume
-        } catch (e: Exception) {
-            logger.warn("Failed to parse snapshot level {}: {}", pq, e.message)
-            null
+    private fun toRawLongPair(pq: List<String>): Pair<Long, Long>? {
+        return parseRawOrderbookSnapshotLevel(pq).also { parsed ->
+            if (parsed == null) {
+                logger.warn("Failed to parse raw snapshot level {}", pq)
+            }
         }
     }
 
@@ -202,5 +198,16 @@ class OrderBookCacheService(
             bids = bidDiffs,
             asks = askDiffs
         )
+    }
+}
+
+internal fun parseRawOrderbookSnapshotLevel(pq: List<String>): Pair<Long, Long>? {
+    if (pq.size < 2) return null
+    return try {
+        val price = PrecisionService.rawFixedPointStringToLong(pq[0])
+        val volume = PrecisionService.rawFixedPointStringToLong(pq[1])
+        if (price <= 0 || volume <= 0) null else price to volume
+    } catch (_: Exception) {
+        null
     }
 }
