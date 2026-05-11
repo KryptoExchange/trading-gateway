@@ -135,7 +135,7 @@ class ExchangeInfoService(
             return Pair(parts[0], parts[1])
         }
         // Fallback: match known quote assets (e.g., "BTCUSDT" -> "BTC", "USDT")
-        val knownQuotes = listOf("USDT", "RUB", "BTC", "ETH", "TRX")
+        val knownQuotes = listOf("USDT", "USDC", "RUB", "BTC", "ETH", "TRX")
         for (quote in knownQuotes) {
             if (name.endsWith(quote) && name.length > quote.length) {
                 return Pair(name.substring(0, name.length - quote.length), quote)
