@@ -38,7 +38,6 @@ class BalanceProxyService(
         val json = mapper.readTree(responseBody)
         val balancesNode = json.path("balances")
 
-        // Group balances by asset, compute free = balance - locked
         val balancesByAsset = mutableMapOf<String, BalanceInfo>()
 
         if (balancesNode.isArray) {
@@ -46,18 +45,14 @@ class BalanceProxyService(
                 val asset = balanceNode.path("assetSymbol").asText("")
                 if (asset.isBlank()) continue
 
-                val totalBalance = balanceNode.path("balance").asText("0")
-
-                // Fetch available balance per asset if not already known
-                // For simplicity, we aggregate: free = available, locked = total - available
-                val existing = balancesByAsset[asset]
-                if (existing == null) {
-                    balancesByAsset[asset] = BalanceInfo(
+                balancesByAsset.putIfAbsent(
+                    asset,
+                    getBalanceWithAvailable(apiKey, asset) ?: BalanceInfo(
                         asset = asset,
-                        free = PrecisionService.balanceToDecimalString(totalBalance, 8),
+                        free = PrecisionService.balanceToDecimalString(balanceNode.path("balance").asText("0"), 8),
                         locked = "0"
                     )
-                }
+                )
             }
         }
 
